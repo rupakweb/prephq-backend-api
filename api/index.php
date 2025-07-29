@@ -159,6 +159,137 @@ elseif ($action === 'user') {
     return_json(['status' => 0, 'error' => 'Invalid token or user not found']);
 }
 
+elseif ($action === 'profileupdate') {
+    if ($is_jwt_valid) {
+        $_POST = get_json_body();
+
+        $user_id = getPayload($bearer_token)->user->id;
+
+        // ✅ Only allow safe editable fields
+        $fields = ['name', 'lastname', 'email', 'username'];
+        $updated_data = [];
+
+        foreach ($fields as $field) {
+            if (isset($_POST[$field])) {
+                // ✅ Basic sanitization
+                $updated_data[$field] = trim(htmlspecialchars($_POST[$field]));
+            }
+        }
+
+        if (!empty($updated_data)) {
+            $updated_data['id'] = $user_id;
+        
+            if ($database->updateUser($updated_data)) {
+                return_json(['status' => 1, 'message' => 'Profile updated successfully']);
+            }
+        }
+
+        return_json(['status' => 0, 'error' => 'Nothing to update or update failed']);
+    }
+
+    return_json(['status' => 0, 'error' => 'Invalid token']);
+}
+
+elseif ($action === 'contactus') {
+    $_POST = get_json_body();
+
+    $firstname = trim($_POST['firstname'] ?? '');
+    $lastname  = trim($_POST['lastname'] ?? '');
+    $email     = trim($_POST['email'] ?? '');
+    $message   = trim($_POST['message'] ?? '');
+
+    if (!$firstname || !$lastname || !$email || !$message) {
+        return_json(['status' => 0, 'error' => 'All fields are required']);
+    }
+
+    $contact = [
+        'firstname'   => $firstname,
+        'lastname'    => $lastname,
+        'email'       => $email,
+        'message'     => $message,
+        'status'      => 0,
+        'created_at'  => date('Y-m-d H:i:s'),
+    ];
+
+    // Save message to database using correct method
+    if ($contact_id = $database->saveContactMessage($contact)) {
+        $contact['id'] = $contact_id;
+
+        // Send email
+        $to = 'prephq@theiotacademy.co';
+        $subject = 'PrepHq Contact Form Submission';
+        $headers = "From: {$email}\r\nReply-To: {$email}\r\nContent-Type: text/html; charset=UTF-8";
+        $body = "<strong>First Name:</strong> {$firstname}<br>
+                 <strong>Last Name:</strong> {$lastname}<br>
+                 <strong>Email:</strong> {$email}<br>
+                 <strong>Message:</strong><br>" . nl2br(htmlspecialchars($message));
+
+        if (mail($to, $subject, $body, $headers)) {
+            return_json(['status' => 1, 'message' => 'Message sent and saved successfully']);
+        } else {
+            return_json(['status' => 0, 'error' => 'Message saved, but failed to send email']);
+        }
+    }
+
+    return_json(['status' => 0, 'error' => 'Failed to save contact message']);
+}
+
+elseif ($action === 'newsletterSubscribe') {
+    $_POST = get_json_body();
+    $email = trim($_POST['email'] ?? '');
+
+    if (!$email) {
+        return_json(['status' => 0, 'error' => 'Email is required']);
+    }
+
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        return_json(['status' => 0, 'error' => 'Invalid email address']);
+    }
+
+    $result = $database->saveNewsletterSubscriber($email);
+
+    if ($result === 'exists') {
+        return_json(['status' => 0, 'error' => 'You have already subscribed.']);
+    }
+
+    if ($result) {
+        // Send confirmation email
+        $to = $email;
+        $subject = 'Subscription Confirmed - PrepHQ';
+
+        $headers = "MIME-Version: 1.0\r\n";
+        $headers .= "Content-Type: text/html; charset=UTF-8\r\n";
+        $headers .= "From: PrepHQ <prephq@theiotacademy.co>\r\n";
+        $headers .= "Reply-To: prephq@theiotacademy.co\r\n";
+
+        $body = "
+            <html>
+            <head><title>Subscription Confirmation</title></head>
+            <body>
+                <p>Hi there,</p>
+                <p>Thank you for subscribing to <strong>PrepHQ</strong> updates!</p>
+                <p>You’ll now receive exclusive news, learning tips, and updates directly in your inbox.</p>
+                <br>
+                <p>Stay tuned!</p>
+                <p><strong>- The IoT Academy Team</strong></p>
+            </body>
+            </html>
+        ";
+
+        // Optional: suppress errors in production with @mail()
+        if (mail($to, $subject, $body, $headers)) {
+            return_json(['status' => 1, 'message' => 'Subscribed successfully. Confirmation email sent.']);
+        } else {
+            return_json(['status' => 1, 'message' => 'Subscribed successfully. Email could not be sent.']);
+        }
+    }
+
+    return_json(['status' => 0, 'error' => 'Something went wrong. Please try again.']);
+}
+
+
+
+
 return_json(['status' => 0, 'error' => 'Invalid endpoint']);
 
 function return_json($arr)

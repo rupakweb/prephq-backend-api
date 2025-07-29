@@ -174,18 +174,33 @@ class Database
             $this->database_name
         );
         $this->connection->set_charset('utf8');
-        $sql = $this->connection->prepare(
-            'UPDATE `user` SET `name` = ?,`lastname`=?,`username`=?,`password`=?,`email`=? WHERE id=?'
-        );
-        $sql->bind_param(
-            'sssssi',
-            $user['name'],
-            $user['lastname'],
-            $user['username'],
-            $user['password'],
-            $user['email'],
-            $user['id']
-        );
+        if (isset($user['password']) && !empty($user['password'])) {
+            $sql = $this->connection->prepare(
+                'UPDATE `user` SET `name` = ?, `lastname` = ?, `username` = ?, `password` = ?, `email` = ? WHERE id = ?'
+            );
+            $sql->bind_param(
+                'sssssi',
+                $user['name'],
+                $user['lastname'],
+                $user['username'],
+                $user['password'],
+                $user['email'],
+                $user['id']
+            );
+        } else {
+            // mit password
+            $sql = $this->connection->prepare(
+                'UPDATE `user` SET `name` = ?, `lastname` = ?, `username` = ?, `email` = ? WHERE id = ?'
+            );
+            $sql->bind_param(
+                'ssssi',
+                $user['name'],
+                $user['lastname'],
+                $user['username'],
+                $user['email'],
+                $user['id']
+            );
+        }
         if ($sql->execute()) {
             $sql->close();
             $this->connection->close();
@@ -195,4 +210,85 @@ class Database
         $this->connection->close();
         return false;
     }
+    public function saveContactMessage($contact)
+    {
+        $this->connection = new mysqli(
+            $this->server_name,
+            $this->database_username,
+            $this->database_password,
+            $this->database_name
+        );
+        $this->connection->set_charset('utf8');
+    
+        $sql = $this->connection->prepare(
+            'INSERT INTO `contact_messages` (`firstname`, `lastname`, `email`, `message`) VALUES (?, ?, ?, ?)'
+        );
+    
+        $sql->bind_param(
+            'ssss',
+            $contact['firstname'],
+            $contact['lastname'],
+            $contact['email'],
+            $contact['message']
+        );
+    
+        if ($sql->execute()) {
+            $insert_id = $this->connection->insert_id;
+            $sql->close();
+            $this->connection->close();
+            return $insert_id;
+        }
+    
+        $sql->close();
+        $this->connection->close();
+        return false;
+    }
+    
+    public function saveNewsletterSubscriber($email)
+    {
+        $this->connection = new mysqli(
+            $this->server_name,
+            $this->database_username,
+            $this->database_password,
+            $this->database_name
+        );
+        $this->connection->set_charset('utf8');
+        
+        // First: Check if email already subscribed
+        $check = $this->connection->prepare(
+            'SELECT id FROM newsletter_subscribers WHERE email = ?'
+        );
+        $check->bind_param('s', $email);
+        $check->execute();
+        $check->store_result();
+    
+        if ($check->num_rows > 0) {
+            $check->close();
+            $this->connection->close();
+            return 'exists'; // <-- return status for duplicate
+        }
+        $check->close();
+    
+        // Proceed to insert new email
+        $sql = $this->connection->prepare(
+            'INSERT INTO newsletter_subscribers (email, status, subscribed_at) VALUES (?, ?, ?)'
+        );
+    
+        $status = 1;
+        $subscribed_at = date('Y-m-d H:i:s');
+        $sql->bind_param('sis', $email, $status, $subscribed_at);
+    
+        if ($sql->execute()) {
+            $insert_id = $this->connection->insert_id;
+            $sql->close();
+            $this->connection->close();
+            return $insert_id;
+        }
+    
+        $sql->close();
+        $this->connection->close();
+        return false;
+    }
+
+    
 }
